@@ -1,0 +1,13 @@
+v 0.0.1
+
+d {bf: Peter Brueckmann}
+d Stata package that standardizes and simplifies repetitive tasks within the realm of data collection using the Survey Solutions software package.
+d
+
+f /get_dcf.ado
+
+f /get_dcf.sthlp
+
+
+e
+

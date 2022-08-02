@@ -1,0 +1,3 @@
+v 0.0.1
+d Peter Brueckmann, p.brueckmann@mailbox.org 
+p stata_to_cspro Stata package for transforming Stata dataset into CSPro dictionary
