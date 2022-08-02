@@ -1,13 +1,13 @@
-# get_dcf - Stata code to create CSPro dictionary 
+# dcf - Stata code to create CSPro dictionary 
 
-**get_dcf** TBD
+**dcf** TBD
 
 ## **Installation**
 Type 
 
-`net install get_dcf , from("https://raw.githubusercontent.com/petbrueck/get_dcf/master/src") replace`  
+`net install dcf , from("https://raw.githubusercontent.com/petbrueck/get_dcf/master/src") replace`  
 
-in your Stata command window. Once installed, type `help get_dcf` to retrieve more information about the package.
+in your Stata command window. Once installed, type `help dcf` to retrieve more information about the package.
 
 ## **Overview**
 TBD

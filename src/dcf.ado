@@ -1,5 +1,32 @@
 *! version 0.0.1 August 2022
 *! Author: Peter Brueckmann, p.brueckmann@mailbox.org
+capture prog drop dcf
+program define dcf
+	
+*** 0. Version check
+********************************************************************************
+
+
+*** 1. IDENTIFY SUBCOMMAND
+********************************************************************************
+gettoken proc 0 : 0, parse(" ,")
+
+	if length("`proc'")==0 {
+		di as error "no subcommand specified. See help on {help dcf##|_new:dcf}"
+		exit 198
+	}
+	if "`proc'"=="setup" {
+	dcf_setup `0'
+	}
+   	else if "`proc'"=="addrecord" {
+	dcf_addrecord `0'
+	}
+	else {
+	di as error "Unrecognized command. Check subcommand. See help on {help dcf##|_new:dcf}"
+	ex 199
+	}
+end
+
 
 
 
@@ -43,7 +70,7 @@ syntax , itemlabel(string) itemname(string) start(integer)
 	"Label=`itemlabel'" _newline
 	"Name=`itemname'" _newline
 	"Start=`start'" _newline
-	"Len= `r(item_length)'" _newline
+	"Len=`r(item_length)'" _newline
 	"DataType=`r(data_type)'" ;
 	#d cr
 
@@ -81,6 +108,7 @@ syntax , variable(string) vslabel(string) vsname(string)
 		 *CREATE VARIABLE THAT STORES THE CSPROP VALUE PATTERN
 		 g cspro_value="Value="+code+";"+label
 		 *GO THROUGH EACH ROW 
+		 *TODO: POSSIBLE TO DO IN ONELINER W/OUT LOOP?
 		 forvalues row=1/`c(N)' {
 			file write dictionary _newline (cspro_value[`row'])
 		 }
@@ -91,11 +119,11 @@ end
 
 
 ********************************************************************************
-**# THE MAIN PROGRAM
+**# THE MAIN PROGRAMS
 ********************************************************************************
-capture program drop get_dcf
+capture program drop dcf_setup
 
-program get_dcf
+program dcf_setup
 *TODO: CHANGE FROM RECORDS TO SHEETS
 *TODO: FLAG IF LABELS (E:G: QUESTIONNAIRE OR VARIABLE) ARE MORE THAN 255. CURRENTLY SILENTLY SHORTENS
 
@@ -184,23 +212,7 @@ foreach iditem of loc iditems {
     mata:  st_local("value_label",st_varvaluelabel("`iditem'"))
 	   if "`value_label'"!="" write_valueset, variable("`iditem'") vslabel("`item_lbl'") vsname("`item_vs_name'")
 }
- 
-
- **# RECORD 
- *TODO: CONSIDER TO MOVE THIS OUT OF ONE COMMAND AND HAVE THEM RATHER ADD SHEET BY SHEET? SO CURRENT COMMAND IS JUST "BASE DICTIONARY"
- *TODO: CORRECT RECORD LENGTH :(
- #d ;
-file write dictionary _newline _newline 
-"[Record]" _newline
-"Label=`records'" _newline
-"Name=`records_name'" _newline
-"RecordTypeValue='`record_start_value''" _newline
-"RecordLen=683" ; 
-#d cr
-
- 
-  
-  
+   
  **# CLOSE THE FILE
 file close dictionary 
 

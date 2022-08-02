@@ -4,9 +4,9 @@ d {bf: Peter Brueckmann}
 d Stata package for transforming Stata dataset into CSPro dictionary
 d
 
-f /get_dcf.ado
+f /dcf.ado
 
-f /get_dcf.sthlp
+f /dcf.sthlp
 
 
 e
