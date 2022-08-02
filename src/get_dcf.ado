@@ -19,16 +19,75 @@ mata:  st_local("item_type",st_vartype("`varlist'") )
 *FOR STRING
 if regexm("`item_type'","^str")==1  mata: st_local("item_length", strofreal(max(strlen(st_sdata(.,"`varlist'")))))
 *FOR NUMERIC
-else if regexm("`item_type'","^str")==0 {
-qui sum `varlist'
-loc item_length= strlen(string(`r(max)'))
-}
+else if regexm("`item_type'","^str")==0 mata: st_local("item_length", strofreal(strlen(strofreal(max(st_data(.,"`varlist'")),"%20.0f"))))
+
 *RETURN THE ITEM LENGTH
 return local item_length= `item_length'
 *AS WELL AS DATATYPE 
 return local data_type=cond(regexm("`item_type'","^str")==1,"Alpha","Numeric")
 
 end 
+
+
+ **# WRITE THE "[ITEM]" PART OF DICTIONARY.
+capture program drop write_item
+
+program write_item
+
+syntax , itemlabel(string) itemname(string) start(integer)
+	 #d ;
+	file write dictionary  
+	 _newline
+	 _newline
+	"[Item]"  _newline
+	"Label=`itemlabel'" _newline
+	"Name=`itemname'" _newline
+	"Start=`start'" _newline
+	"Len= `r(item_length)'" _newline
+	"DataType=`r(data_type)'" ;
+	#d cr
+
+end 
+
+
+ **# WRITE THE "[ValueSet]" PART OF DICTIONARY. 
+capture program drop write_valueset
+
+program write_valueset
+
+syntax , variable(string) vslabel(string) vsname(string) 
+
+	   	**FIRST WRITE THE HEADER
+		#d ;
+		file write dictionary  
+		 _newline
+		 _newline
+		"[ValueSet]" _newline
+		"Label=`vslabel'" _newline
+		"Name=`vsname'" ;
+		#d cr
+		
+		*NOW WRITE THE ACTUAL VALUES 
+		//GET THE VALUE LABELS 
+		mata: st_vlload(st_varvaluelabel("`variable'"), values=., text=.)
+		//STORE THE VALUE LABELS IN A MATRIX
+		mata:VL_MATRIX= strofreal(values,"%20.0f"),text
+		//TEMPORARILY CREATE A NEW DATASET THAT STORES THE VALUE LABELS
+		preserve
+		 clear
+		 **GET IT INTO DATA FRAME
+		 getmata(code label)=VL_MATRIX
+		 
+		 *CREATE VARIABLE THAT STORES THE CSPROP VALUE PATTERN
+		 g cspro_value="Value="+code+";"+label
+		 *GO THROUGH EACH ROW 
+		 forvalues row=1/`c(N)' {
+			file write dictionary _newline (cspro_value[`row'])
+		 }
+		restore
+
+end 
+
 
 
 ********************************************************************************
@@ -115,55 +174,15 @@ foreach iditem of loc iditems {
 	investigate_item `iditem'
     
 	*WRITE ITEM
-	 #d ;
-	file write dictionary  
-	 _newline
-	 _newline
-	"[Item]"  _newline
-	"Label=`item_lbl'" _newline
-	"Name=`item_name'" _newline
-	"Start=`item_pos'" _newline
-	"Len= `r(item_length)'" _newline
-	"DataType=`r(data_type)'" ;
-	#d cr
+    write_item,itemlabel("`item_lbl'") itemname("`item_name'") start(`item_pos')
+	
 	*AFTER EACH VARIABLE, IDENTIFY THE NEW START POSITION
 	loc item_pos=`item_pos'+`r(item_length)'
 
 	*WRITE THE VALUE SET - ONLY IF THERE ARE VALUE LABELS 
 	*IDENTIFY VALUE LABEL ("" IF IT DOESNT EXIST)
     mata:  st_local("value_label",st_varvaluelabel("`iditem'"))
-	   if "`value_label'"!="" {
-	   	**FIRST WRITE THE HEADER
-			 #d ;
-		file write dictionary  
-		 _newline
-		 _newline
-		"[ValueSet]" _newline
-		"Label=`item_lbl'" _newline
-		"Name=`item_vs_name'" ;
-		#d cr
-		*NOW WRITE THE ACTUAL VALUES 
-		//GET THE VALUE LABELS 
-		mata: st_vlload(st_varvaluelabel("`iditem'"), values=., text=.)
-		//STORE THE VALUE LABELS IN A MATRIX
-		mata:VL_MATRIX= strofreal(values),text
-		//TEMPORARILY CREATE A NEW DATASET THAT STORES THE VALUE LABELS
-		preserve
-		 clear
-		 **GET IT INTO DATA FRAME
-		 getmata(code label)=VL_MATRIX
-		 
-		 *CREATE VARIABLE THAT STORES THE CSPROP VALUE PATTERN
-		 g cspro_value="Value="+code+";"+label
-		 *GO THROUGH EACH ROW 
-		 *TODO: CAN BE DONE IN ONE WRITE? 
-		 forvalues row=1/`c(N)' {
-		 	file write dictionary _newline
-			file write dictionary (cspro_value[`row'])
-		 }
-		restore
-
-	   }
+	   if "`value_label'"!="" write_valueset, variable("`iditem'") vslabel("`item_lbl'") vsname("`item_vs_name'")
 }
  
 
