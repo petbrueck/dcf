@@ -10,8 +10,14 @@ Type
 
 in your Stata command window. Once installed, type `help dcf` to retrieve more information about the package.
 
+
 ## **Overview**
 TBD
+
+
+## **Example**
+Show that if large dataset you can simply keep 1 obs.
+
 ## Disclaimer
 No responsibility or liability for the correct functionality of the commands is taken!
 
