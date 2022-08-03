@@ -5,7 +5,6 @@
 *TODO: IF VALUESET MORE THAN 500 UNIQUE LABELS, RETURN ERROR OR DON'T DO
 *TODO: EACH RECORD START VALUE IS FROM BASEFILE AFTER ID-ITEMS. SEE IF TIS RESOLVES ISSUES
 *TODO: ADD TO ITEM. Decimal=6 (?) CAN ACTUALL BE EASILY SOURCED FROM STRINGCOUNT
-*TODO: WRITE TO TEMP AND ONLY IF SUCCESSFULLY COPY OVER
 *TODO: IDENTIFY RecordTypeStart MEANING AND OTHER RECOD SETTINGS IF SHOULD BE USER ACCESSIBLE. e.g DecimalChar=YES
 *TODO: FLAG ALL INPUTS AND IMPROVE INPUTS (e.g. maxrecord only allow 1 digit)
 *TODO: GO THROUGH ALL MISC. TODOS IN FILE
@@ -249,14 +248,15 @@ syntax ,  dictionary(string) ///
 ** THE STARTING POSITION OF ITEMS
 loc item_pos=1
  
-**# WRITE THE DICTIONARY FILE
-file open dictionary using  "`c(pwd)'/`dictionary_label'.dcf", write replace 		
+**# WRITE THE DICTIONARY FILE IN TEMPFILE
+tempfile wf
+file open dictionary using `wf' , write replace 		
 
  **# MAIN DICTIONARY 'OPTIONS'/SETTINGS	
 #d ;
 file write dictionary   
 "[Dictionary]"  _newline
-"Version=CSPro 7.6"  _newline
+"Version=CSPro 7.7"  _newline
 "Label=`dictionary'"  _newline
 "Name=`dictionary_label'"  _newline
 "RecordTypeStart=45"  _newline
@@ -311,7 +311,8 @@ foreach iditem of loc iditems {
    
  **# CLOSE THE FILE
 file close dictionary 
-
+**COPY TEMPFILE TO FINAL FILE 
+copy `wf' "`c(pwd)'/`dictionary_label'.dcf",replace
 end 
 
 
@@ -358,7 +359,6 @@ loc item_pos=`r(dict_litem_start)' +  `r(dict_litem_length)'+1
 loc dict_newrecord=`r(dict_lrecord)'+1
 
 **# OPEN THE FILE OF USER
-*TODO: WRITE TO TEMP AND ONLY IF SUCCESSFULLY COPY OVER
 file open dictionary using  `"`using'"', write append 		
 
 **# APPEND RECORD SETTINGS 
