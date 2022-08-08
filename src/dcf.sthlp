@@ -22,3 +22,9 @@
 {synopt:{opt questionnaire(string)}}Name of instrument/questionnaire. Determines the main level in dictionary {p_end}
 {synopt:{opt iditems(varlist)}} List of variables that will serve as [Identification Items](https://www.csprousers.org/help/CSPro/identification_items.html) that uniquely identify the observations {p_end}
 {synoptline}
+
+{synoptset 21 tabbed}{...}
+{synopthdr:Optional }
+{synoptline}
+{synopt:{opt folder(string)}} Name of path in which dictionary can be stored. (dcf setup, todo, put only in that helpfile) {p_end}
+{synoptline}

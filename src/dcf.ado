@@ -1,15 +1,17 @@
 *! version 0.0.1 August 2022
 *! Author: Peter Brueckmann, p.brueckmann@mailbox.org
 
+
+*TODO: EACH RECORD START VALUE IS FROM BASEFILE AFTER ID-ITEMS. SEE IF THIS RESOLVES ISSUES
 *TODO: DO BOOKMARKS & BETTER DOCUMENTATION
 *TODO: IF VALUESET MORE THAN 500 UNIQUE LABELS, RETURN ERROR OR DON'T DO
-*TODO: EACH RECORD START VALUE IS FROM BASEFILE AFTER ID-ITEMS. SEE IF TIS RESOLVES ISSUES
 *TODO: ADD TO ITEM. Decimal=6 (?) CAN ACTUALL BE EASILY SOURCED FROM STRINGCOUNT
 *TODO: IDENTIFY RecordTypeStart MEANING AND OTHER RECOD SETTINGS IF SHOULD BE USER ACCESSIBLE. e.g DecimalChar=YES
 *TODO: FLAG ALL INPUTS AND IMPROVE INPUTS (e.g. maxrecord only allow 1 digit)
 *TODO: GO THROUGH ALL MISC. TODOS IN FILE
 *TODO: PRECISION ISSUE OF DOUBLE. WILL GIVE ISSUES?
 *TODO: SECURITYOPTIONS REALLY NEEDED? 
+*TODO: COMMANDS AFTER SETUP: CHECK IF FILE EXISTS!
 
 capture prog drop dcf
 program define dcf
@@ -228,9 +230,20 @@ program dcf_setup
 
 syntax ,  dictionary(string) ///
 		  questionnaire(string) ///
-		  iditems(varlist)
+		  iditems(varlist) ///
+		  [FOLDER(string)]
 
 **# PROCESS THE INPUT 
+**FOLDER
+if length("`folder'")>0 {
+mata : st_numscalar("OK", direxists("`folder'"))
+	if scalar(OK)==0 {
+		noi dis as error _n "Attention. Folder: ""`folder'"" not found."
+		noi dis as error  "Please correctly specify {help dcf_setup##dcf_setup:folder(string)}"
+		ex 601
+	}
+}
+if "`folder'"=="" loc folder "`c(pwd)'"
 
 **QUESTIONNAIRE
 *CORRECT NAME
@@ -312,7 +325,7 @@ foreach iditem of loc iditems {
  **# CLOSE THE FILE
 file close dictionary 
 **COPY TEMPFILE TO FINAL FILE 
-copy `wf' "`c(pwd)'/`dictionary_label'.dcf",replace
+copy `wf' "`folder'/`dictionary_label'.dcf",replace
 end 
 
 
