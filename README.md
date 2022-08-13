@@ -32,7 +32,7 @@ dcf addrecord using  "EXAMPLE_DICTIONARY.dcf", record("Interview Level") iditems
 *ASSUMPTION: iditems VARIABLES ARE IN THERE AND IN CORRECT ORDER
 use "person_roster.dta",clear
 
-dcf addrecord using  "EXAMPLE_DICTIONARY.dcf", record("Person Roster") iditems(idvar1 idvar2 idvar3) 
+dcf addrecord using  "EXAMPLE_DICTIONARY.dcf", record("Person Roster") iditems(idvar1 idvar2 idvar3) required("No")
 ```
 
 
