@@ -1,16 +1,16 @@
 *! version 0.0.1 August 2022
 *! Author: Peter Brueckmann, p.brueckmann@mailbox.org
 
+*TODO: 1) RecordLen=XXXX within each Record. Can be done with record_start
 *TODO: 2) IF ONLY ONE VALUE LABEL (e.g. Age "Less than one year"), ADD THE REMAINING VALUES
 *TODO: RecordTypeLen STILL NEEDS TO BE UPDATED WHENVEVER U ADD A RECORD
 *TODO: IF VALUESET MORE THAN 500 UNIQUE LABELS, RETURN ERROR OR DON'T DO
-*TODO: ADD TO ITEM. Decimal=6 (?) CAN ACTUALL BE EASILY SOURCED FROM STRINGCOUNT
 *TODO: FLAG ALL INPUTS AND IMPROVE INPUTS (e.g. maxrecord only allow 1 digit)
 *TODO: GO THROUGH ALL MISC. TODOS IN FILE
-*TODO: PRECISION ISSUE OF DOUBLE. WILL GIVE ISSUES?
 *TODO: SECURITYOPTIONS REALLY NEEDED? OR DO RANDOM NUMBER?
 *TODO: COMMANDS AFTER SETUP: CHECK IF FILE EXISTS!
 *TODO: DO BOOKMARKS & BETTER DOCUMENTATION
+*TODO: double: CONFIRM LENGTH OF ITEM OF TYPE double. INDEED ONLY 4D BEHIND '.'? AND BEUATIFY COMMAND & CHECK IF NEGATIVE SIGN IS COUNTED AS WELL BY CSPRO CONV.
 
 capture prog drop dcf
 program define dcf
@@ -51,9 +51,24 @@ syntax varlist
 *GET THE LENGTH OF VARIABLE: 
 *IDENTIFY TYPE
 mata:  st_local("item_type",st_vartype("`varlist'") )  
+*IDENTIFY IF ALL MISSING. IF SO: item_length==0
+qui count if missing(`varlist')
+if `r(N)'==`c(N)' {
+	noi dis as error  "Variable `varlist' contains only missings. Will not be added to dictionary."
+	loc item_length=0
+}
+else if `r(N)'!=`c(N)' {
+
+
 *FOR STRING
 if regexm("`item_type'","^str")==1 {
-	*IDENTIFY VALUE  BASED ON STRING TYPE
+	*FOR NOW, IDENTIFY VALUE  BASED ON STRING TYPE. HOWEVER, IF DATA  MANIUPLATED AND TYPE NOT ADJUSTED,
+	*CAN LEAD TO DIFFERENT RESULT. SO TEMP COMPRESS THE VARIABLE AND GET NEW ITEM TYPE
+	preserve 
+	qui compress `varlist'
+	mata:  st_local("item_type",st_vartype("`varlist'") )  
+	restore 
+	*NOW GET THE VALUE AGAIN
 	loc item_length=substr("`item_type'",4,.)
 	*IF 0 (NO VALUE ENTERED) CHANGE TO 1 
 	if `item_length'==0 loc item_length=1
@@ -76,20 +91,30 @@ else if regexm("`item_type'","^str")==0 {
 	else if "`value_label'"=="" mata: st_local("item_length", strofreal(strlen(strofreal(max(st_data(.,"`varlist'")),"%16.0g"))))
 
 	*IF DOUBLE DO SPECIAL
-	*TODO: ACTUALLY NECESSARY OR BY DEFAULT 13? 
 	if "`item_type'"=="double" & "`value_label'"=="" {
 		noi dis as result "Attention. Variable `varlist' of type 'double'. Might lead to conversion and/or precision issues"
-		*GET MAX AND COUNT LENGTH WITHOUT DECIMAL
-		mata: st_local("item_length", strofreal(max(st_data(.,"`varlist'")),"%16.0g"))
-		loc item_length=length(subinstr("`item_length'",".","",.))
+		*BRUTE FORCE TO STRING. COUNT THE ALPHA CHARACTERS BASED ON FORMULA: 
+		*ALL CHARS OF INTEGER PART + DELIMITER + FRACTIONAL PART UP TO 6!
+		*UNFORTUNATELY DO DIRTY (FOR NOW).
+		tempvar helpvar helpvar2 helpvar3
+		qui tostring `varlist', g(`helpvar') force
+		*KEEP ONLY 6 DIGITS AFTER THE DOT
+		qui replace `helpvar'=substr(`helpvar',1,strpos(`helpvar',".")+6)
+		qui egen `helpvar2'=max(length(`helpvar'))
+		loc item_length=`helpvar2'[1]
+		*CHECK IF ANY INTEGER. IF NONE, ADD 1 TO LENGTH AS CSPRO READS LEADING 0
+		drop `helpvar' `helpvar2'
+		qui g `helpvar3'=int(`varlist')
+		qui sum `helpvar3'
+		if `r(min)'==0 & `r(max)'==0 loc item_length=`item_length'+1
 	}
 	
 	*IF LARGER THAN 15, SET TO 15
 	if `item_length'>15 noi dis as result "Attention. Numeric variable `varlist' has length>15. Set to 15 to comply with CSPro"
 	if `item_length'>15 loc item_length=15
 
-}
-
+		}
+	}
 *RETURN THE ITEM LENGTH
 return local item_length= `item_length'
 *AS WELL AS DATATYPE 
@@ -140,8 +165,10 @@ syntax , itemlabel(string) itemname(string) start(integer)
 
 ** IF ALPHA ADD TYPE 
 if "`r(csprodata_type)'"=="Alpha" file write dictionary _newline "DataType=Alpha"
-**IF DOUBLE ADD DECIMAL
+**IF DOUBLE ADD DECIMAL + DECIMAL=6. SEEMS TO BE DEFAULT BY CONVERSION
 if "`r(variable_type)'"=="double" file write dictionary _newline "DecimalChar=Yes"
+if "`r(variable_type)'"=="double" file write dictionary _newline "Decimal=6"
+
 
 end 
 
@@ -229,6 +256,9 @@ if "`folder'"=="" loc folder "`c(pwd)'"
  **# DICTIONARY NAME 
  loc dictionary_label=upper(ustrregexra("`dictionary'","\s|\t|\n","_")) 
  
+**IDITEMS ARE TRULY IDs? 
+ isid `iditems'
+
 **# MAIN SETTINGS/LOCALS
 ** THE STARTING POSITION OF ITEMS
 loc item_pos=1
@@ -267,9 +297,11 @@ file write dictionary
 
  **# IDITEMS
 file write dictionary _newline _newline "[IdItems]"
- 
+
+
 **ADD ALL ID-ITEMS. 
 foreach iditem of loc iditems {
+	*CHECK IF ANY MISSING. SHOULDNT BE THE CASE 
 	*VARIABLE LABEL (SHORTEN TO 255 CHAR MAX)
 	loc item_lbl: variable label `iditem'
 	loc item_lbl=substr("`item_lbl'",1,255)
@@ -284,7 +316,10 @@ foreach iditem of loc iditems {
 	
 	*GET LENGTH OF THAT VARIABLE AND DATATYPE
 	investigate_item `iditem'
-    
+    if `r(item_length)'==0 {
+		noi dis as error "`iditem' is of length 0. Iditems need to be of length 1+"
+		ex 198
+	}
 	*WRITE ITEM
     write_item,itemlabel("`item_lbl'") itemname("`item_name'") start(`item_pos')
 	
@@ -381,34 +416,36 @@ if "`maxrecord'"!="" file write dictionary _newline "MaxRecords=`maxrecord'"
 
 
 **ADD ALL ID-ITEMS. 
-foreach iditem of var `r(varlist)' {
+foreach itemvar of var `r(varlist)' {
 	*VARIABLE LABEL (SHORTEN TO 255 CHAR MAX)
-	loc item_lbl: variable label `iditem'
+	loc item_lbl: variable label `itemvar'
 	loc item_lbl=substr("`item_lbl'",1,255)
 
 	*CHANGE TO VARIABLE NAME IF NO LABEL
-    if "`item_lbl'"=="" loc item_lbl="`iditem'"
+    if "`item_lbl'"=="" loc item_lbl="`itemvar'"
 
 	*VARIABLE NAME. IN UPPER CASE TO MIMIC CSPRO 
-	loc item_name=upper("`iditem'")
+	loc item_name=upper("`itemvar'")
 	
 	*VALUE SET NAME 
 	loc item_vs_name="`item_name'"+"_VS1"
 	loc item_vs_name=substr("`item_vs_name'",1,255)
 	
 	*GET LENGTH OF THAT VARIABLE AND DATATYPE
-	investigate_item `iditem'
-    
-	*WRITE ITEM
-    write_item,itemlabel("`item_lbl'") itemname("`item_name'") start(`item_pos')
+	investigate_item `itemvar'
+
+	*WRITE ITEM (ONLY IF NOT ALL MISSING)
+    if `r(item_length)'!=0 {
+       	write_item,itemlabel("`item_lbl'") itemname("`item_name'") start(`item_pos')
+	}
 	
 	*AFTER EACH VARIABLE, IDENTIFY THE NEW START POSITION
 	loc item_pos=`item_pos'+`r(item_length)'
 
-	*WRITE THE VALUE SET - ONLY IF THERE ARE VALUE LABELS 
+	*WRITE THE VALUE SET - ONLY IF THERE ARE VALUE LABELS & ITEM LENGTH>0 (Latter avoids if .c etc. are labelled)
 	*IDENTIFY VALUE LABEL ("" IF IT DOESNT EXIST)
-    mata:  st_local("value_label",st_varvaluelabel("`iditem'"))
-	   if "`value_label'"!="" write_valueset, variable("`iditem'") vslabel("`item_lbl'") vsname("`item_vs_name'")
+    mata:  st_local("value_label",st_varvaluelabel("`itemvar'"))
+	   if "`value_label'"!="" & `r(item_length)'>0 write_valueset, variable("`itemvar'") vslabel("`item_lbl'") vsname("`item_vs_name'")
 }
 
  **# CLOSE THE FILE
