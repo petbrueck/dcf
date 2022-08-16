@@ -1,17 +1,16 @@
 *! version 0.0.1 August 2022
 *! Author: Peter Brueckmann, p.brueckmann@mailbox.org
 
-
-*TODO: EACH RECORD START VALUE IS FROM BASEFILE AFTER ID-ITEMS. SEE IF THIS RESOLVES ISSUES
-*TODO: DO BOOKMARKS & BETTER DOCUMENTATION
+*TODO: 2) IF ONLY ONE VALUE LABEL (e.g. Age "Less than one year"), ADD THE REMAINING VALUES
+*TODO: RecordTypeLen STILL NEEDS TO BE UPDATED WHENVEVER U ADD A RECORD
 *TODO: IF VALUESET MORE THAN 500 UNIQUE LABELS, RETURN ERROR OR DON'T DO
 *TODO: ADD TO ITEM. Decimal=6 (?) CAN ACTUALL BE EASILY SOURCED FROM STRINGCOUNT
-*TODO: IDENTIFY RecordTypeStart MEANING AND OTHER RECOD SETTINGS IF SHOULD BE USER ACCESSIBLE. e.g DecimalChar=YES
 *TODO: FLAG ALL INPUTS AND IMPROVE INPUTS (e.g. maxrecord only allow 1 digit)
 *TODO: GO THROUGH ALL MISC. TODOS IN FILE
 *TODO: PRECISION ISSUE OF DOUBLE. WILL GIVE ISSUES?
-*TODO: SECURITYOPTIONS REALLY NEEDED? 
+*TODO: SECURITYOPTIONS REALLY NEEDED? OR DO RANDOM NUMBER?
 *TODO: COMMANDS AFTER SETUP: CHECK IF FILE EXISTS!
+*TODO: DO BOOKMARKS & BETTER DOCUMENTATION
 
 capture prog drop dcf
 program define dcf
@@ -100,6 +99,24 @@ return local variable_type="`item_type'"
 end 
 
 
+ **# GET THE FULL LENGTH OF ALL ITEMS SPECIFIED (USUALLY THE IDITEMS)
+capture program drop record_start
+
+program record_start, rclass
+
+syntax varlist
+
+*GET THE LENGTH OF VARIABLE: 
+loc record_start=1
+foreach var of var `varlist' {
+	investigate_item `var'
+	loc record_start=`record_start'+`r(item_length)'
+}
+
+*RETURN THE ITEM LENGTH
+return local record_start= `record_start'
+end 
+
 
 
  **# WRITE THE "[ITEM]" PART OF DICTIONARY.
@@ -170,51 +187,6 @@ syntax , variable(string) vslabel(string) vsname(string)
 end 
 
 
- **# IDENTIFY THE LAST START/LENGTH OF ITEM IN EXISTING DICTIONARY
- **  UTIL FUNCTION FOR dcf_addrecord
-capture program drop read_dict
-
-        program read_dict,rclass
-                syntax using/
-				*READ IN TEMPFILE SO IT CLOSES IF BREAKS
-                tempname temp_read
-				*START READING LINE 0
-                local linenum = 0
-				*OPEN AND READ FIRST LINE
-                file open `temp_read' using `using', read
-                file read `temp_read' line
-				*GO THROUGH UNTIL END OF LINE
-                while r(eof)==0 {
-                        local linenum = `linenum' + 1
-						*IDENTIFY THE LAST START POSITION OF ITEM
-						if regexm(`"`macval(line)'"',"^Start=")==1  loc lstart_pos=ustrregexra(`"`macval(line)'"',"^Start=","")
-						*IDENTIFY THE LAST ITEM LENGTH
-						if regexm(`"`macval(line)'"',"^Len=")==1  loc l_length=ustrregexra(`"`macval(line)'"',"^Len=","")
-						*IDENTIFY HIGHEST RECORDTYPEVALUE (IF EXISTS AT ALL). REMOVE QUOTES
-						if regexm(`"`macval(line)'"',"^RecordTypeValue=")==1  loc l_recordval=ustrregexra(ustrregexra(`"`macval(line)'"',"^RecordTypeValue=",""),"\'","")
-
-                        file read `temp_read' line
-                }
-                file close `temp_read'
-		noi dis as result "Last Start of Item: `lstart_pos'"
-		noi dis as result "Last Length of Item: `l_length'"
-		if "`l_recordval'"!="" noi dis as result "Number of records identified: `l_recordval'"
-		else if "`l_recordval'"=="" noi dis as result "No record identified in existing dictionary file"
-		*RETURN THE ITEM LENGTH
-		return local dict_litem_start= `lstart_pos'
-		*AS WELL AS DATATYPE 
-		return local dict_litem_length=`l_length'
-		*AND RECORD. RETURN 0 IN CASE NO EXISTED.
-		if "`l_recordval'"=="" loc l_recordval=0
-		return local dict_lrecord=`l_recordval'
-	 end
-
-
-
-
-
-
-
 ********************************************************************************
 **# 3.  THE MAIN PROGRAMS
 ********************************************************************************
@@ -266,13 +238,16 @@ tempfile wf
 file open dictionary using `wf' , write replace 		
 
  **# MAIN DICTIONARY 'OPTIONS'/SETTINGS	
+ *FIRST IDENTIFY THE LENGHTH OF IDITEMS
+record_start `iditems'
+
 #d ;
 file write dictionary   
 "[Dictionary]"  _newline
 "Version=CSPro 7.7"  _newline
 "Label=`dictionary'"  _newline
 "Name=`dictionary_label'"  _newline
-"RecordTypeStart=45"  _newline
+"RecordTypeStart= `r(record_start)'"  _newline
 "RecordTypeLen=1"  _newline
 "Positions=Relative"  _newline
 "ZeroFill=Yes"  _newline
@@ -356,17 +331,24 @@ syntax using/,   record(string) iditems(varlist) [required(string)] [maxrecord(n
 
  **# RECORD SHEET 
  **TODO: CSPRO REQUIREMENT The first character of a name must be a letter; the last character cannot be an underscore
-
  loc record_name=upper(ustrregexra("`record'","\s|\t|\n","_"))
  
- 
+ **MISC. CHECKS 
+  *CHECK IF IDITEMS UNIQUELY IDENTIFY OBS. IF NOT AND 'required' NOT SPECIFIED: Give warning
+ capt isid `iditems'
+ if _rc==459 & "`required'"=="Yes" {
+	noi display as error  "Attention. iditems specified do not uniquely identify the observations."
+	noi dis as error "Consider specifiy 'required('No')'"
+ }
+
  
 **# IDENTIFY LAST START & LENGTH OF ITEM & RECORDVALUE IN EXISTING DICTIONARY FILE
-read_dict using `"`using'"'
+ *FIRST IDENTIFY THE LENGHTH OF IDITEMS
+record_start `iditems'
 
 **# MAIN SETTINGS/LOCALS
-** THE STARTING POSITION OF ITEMS: BASED ON LAST ITEM IN FILE: START + LENGTH + 1
-loc item_pos=`r(dict_litem_start)' +  `r(dict_litem_length)'+1
+** THE STARTING POSITION OF ITEMS: BASED ON LENGT OF IDITEMS + 1
+loc item_pos=`r(record_start)'+1
 
 *ADD 1 TO RECORD LENGTH  FROM READ_DICT
 loc dict_newrecord=`r(dict_lrecord)'+1
