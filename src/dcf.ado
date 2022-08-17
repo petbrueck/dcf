@@ -1,9 +1,10 @@
 *! version 0.0.1 August 2022
 *! Author: Peter Brueckmann, p.brueckmann@mailbox.org
 
+*TODO: MAKE DROPPING OBS IF ALL MISSING OPTIONAL
 *TODO: 1) RecordLen=XXXX within each Record. Can be done with record_start
 *TODO: 2) IF ONLY ONE VALUE LABEL (e.g. Age "Less than one year"), ADD THE REMAINING VALUES
-*TODO: RecordTypeLen STILL NEEDS TO BE UPDATED WHENVEVER U ADD A RECORD
+*TODO: ADJUST COMMAND SO IT DOES RecordTypeLen ONESELF? See https://www.statalist.org/forums/forum/general-stata-discussion/general/1458650-overwrite-line-in-textfile-with-file-command
 *TODO: IF VALUESET MORE THAN 500 UNIQUE LABELS, RETURN ERROR OR DON'T DO
 *TODO: FLAG ALL INPUTS AND IMPROVE INPUTS (e.g. maxrecord only allow 1 digit)
 *TODO: GO THROUGH ALL MISC. TODOS IN FILE
@@ -51,10 +52,12 @@ syntax varlist
 *GET THE LENGTH OF VARIABLE: 
 *IDENTIFY TYPE
 mata:  st_local("item_type",st_vartype("`varlist'") )  
-*IDENTIFY IF ALL MISSING. IF SO: item_length==0
+*IDENTIFY IF ALL MISSING. IF SO: item_length==0 & MIGHT BE DROPPED BASED ON USER CHOICE.
 qui count if missing(`varlist')
 if `r(N)'==`c(N)' {
 	noi dis as error  "Variable `varlist' contains only missings. Will not be added to dictionary."
+	noi dis as error  "Ensure that your excel file will not contain any columns with only missing data"
+	noi dis as error "Attention: Will also be dropped from dataset."
 	loc item_length=0
 }
 else if `r(N)'!=`c(N)' {
@@ -230,9 +233,14 @@ program dcf_setup
 syntax ,  dictionary(string) ///
 		  questionnaire(string) ///
 		  iditems(varlist) ///
+		  recordlength(numlist) ///
 		  [FOLDER(string)]
 
 **# PROCESS THE INPUT 
+if `recordlength'<=0 {
+	noi dis as error "recordlength(numlist) must not be negative. Please check."
+	ex 198
+}
 **FOLDER
 if length("`folder'")>0 {
 mata : st_numscalar("OK", direxists("`folder'"))
@@ -278,7 +286,7 @@ file write dictionary
 "Label=`dictionary'"  _newline
 "Name=`dictionary_label'"  _newline
 "RecordTypeStart= `r(record_start)'"  _newline
-"RecordTypeLen=1"  _newline
+"RecordTypeLen=`recordlength'"  _newline
 "Positions=Relative"  _newline
 "ZeroFill=Yes"  _newline
 "SecurityOptions=3F804FBE8B125F1D4F2888E49611F0CC40D87D7DF9AF3DC8E94E672801895741AF8C05AF419305EC3E456524EA2B37F7" _newline
@@ -350,7 +358,7 @@ capture program drop dcf_addrecord
 program dcf_addrecord
 *TODO: FLAG IF LABELS (E:G: QUESTIONNAIRE OR VARIABLE) ARE MORE THAN 255. CURRENTLY SILENTLY SHORTENS
 
-syntax using/,   record(string) iditems(varlist) [required(string)] [maxrecord(numlist)]
+syntax using/,   record(string) iditems(varlist) [required(string)] [maxrecord(numlist)] [nodrop]
 
 **# PROCESS THE INPUT 
 
@@ -382,11 +390,12 @@ syntax using/,   record(string) iditems(varlist) [required(string)] [maxrecord(n
 record_start `iditems'
 
 **# MAIN SETTINGS/LOCALS
-** THE STARTING POSITION OF ITEMS: BASED ON LENGT OF IDITEMS + 1
-loc item_pos=`r(record_start)'+1
+** THE STARTING POSITION OF ITEMS: BASED ON LENGT OF IDITEMS (NO VALUE ADDED)
+loc item_pos=`r(record_start)'
 
-*ADD 1 TO RECORD LENGTH  FROM READ_DICT
-loc dict_newrecord=`r(dict_lrecord)'+1
+*GENERATE A RANDOM VALUE FOR RecordTypeValue. SEEMS LIKE THIS SHOULD SATISFY CSPRO AS LONG AS INTEGER
+loc rnd_rv=uniform()
+loc rnd_rv=substr("`rnd_rv'",2,.)
 
 **# OPEN THE FILE OF USER
 file open dictionary using  `"`using'"', write append 		
@@ -397,7 +406,7 @@ file write dictionary _newline _newline
 "[Record]" _newline
 "Label=`record'" _newline
 "Name=`record_name'" _newline
-"RecordTypeValue='`dict_newrecord''" _newline
+"RecordTypeValue='`rnd_rv''" _newline
 "Required=`required'";
 #d cr
 
@@ -415,7 +424,7 @@ if "`maxrecord'"!="" file write dictionary _newline "MaxRecords=`maxrecord'"
  noi dis as result "Variables '`first'' - '`last'' will be added to record"
 
 
-**ADD ALL ID-ITEMS. 
+**ADD ALL ITEMS. 
 foreach itemvar of var `r(varlist)' {
 	*VARIABLE LABEL (SHORTEN TO 255 CHAR MAX)
 	loc item_lbl: variable label `itemvar'
@@ -437,6 +446,10 @@ foreach itemvar of var `r(varlist)' {
 	*WRITE ITEM (ONLY IF NOT ALL MISSING)
     if `r(item_length)'!=0 {
        	write_item,itemlabel("`item_lbl'") itemname("`item_name'") start(`item_pos')
+	}
+	if `r(item_length)'==0{
+		drop `itemvar'
+		continue
 	}
 	
 	*AFTER EACH VARIABLE, IDENTIFY THE NEW START POSITION
