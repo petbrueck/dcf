@@ -1,9 +1,10 @@
 *! version 0.0.1 August 2022
 *! Author: Peter Brueckmann, p.brueckmann@mailbox.org
 
-*TODO: MAKE DROPPING OBS IF ALL MISSING OPTIONAL
-*TODO: 1) RecordLen=XXXX within each Record. Can be done with record_start
+*TODO: Recordtypelenght potentially only=1. Then it at least doesnt give an error. weirds
+*TODO: CHECK ISSUE FLAGGED XXXX__123. I THINK BETTER TO TAKE OUT THE VALUE LABEL CHECK IN THAT COMMAND? BUT THEN NAURU GIVES MISMATCHES AGAIN. INVESTIGATE WHERE THEY COME FRM
 *TODO: 2) IF ONLY ONE VALUE LABEL (e.g. Age "Less than one year"), ADD THE REMAINING VALUES
+*TODO: MAKE DROPPING OBS IF ALL MISSING OPTIONAL?
 *TODO: ADJUST COMMAND SO IT DOES RecordTypeLen ONESELF? See https://www.statalist.org/forums/forum/general-stata-discussion/general/1458650-overwrite-line-in-textfile-with-file-command
 *TODO: IF VALUESET MORE THAN 500 UNIQUE LABELS, RETURN ERROR OR DON'T DO
 *TODO: FLAG ALL INPUTS AND IMPROVE INPUTS (e.g. maxrecord only allow 1 digit)
@@ -12,6 +13,8 @@
 *TODO: COMMANDS AFTER SETUP: CHECK IF FILE EXISTS!
 *TODO: DO BOOKMARKS & BETTER DOCUMENTATION
 *TODO: double: CONFIRM LENGTH OF ITEM OF TYPE double. INDEED ONLY 4D BEHIND '.'? AND BEUATIFY COMMAND & CHECK IF NEGATIVE SIGN IS COUNTED AS WELL BY CSPRO CONV.
+*TODO: INVESTIGATE POSSIBILITY OF ADDING SPECIFIC VALUE SETS
+*TODO: Add "Excel to CSPro" STREAM TO GENERATE THE CSPRO DATA? 
 
 capture prog drop dcf
 program define dcf
@@ -47,7 +50,8 @@ capture program drop investigate_item
 
 program investigate_item, rclass
 
-syntax varlist
+syntax varlist, ///
+[quiet] //TO RUN QUIETLY. IF CALLED AS UTILITY WRAPPER FROM record_items_sumup 
 
 *GET THE LENGTH OF VARIABLE: 
 *IDENTIFY TYPE
@@ -55,9 +59,7 @@ mata:  st_local("item_type",st_vartype("`varlist'") )
 *IDENTIFY IF ALL MISSING. IF SO: item_length==0 & MIGHT BE DROPPED BASED ON USER CHOICE.
 qui count if missing(`varlist')
 if `r(N)'==`c(N)' {
-	noi dis as error  "Variable `varlist' contains only missings. Will not be added to dictionary."
-	noi dis as error  "Ensure that your excel file will not contain any columns with only missing data"
-	noi dis as error "Attention: Will also be dropped from dataset."
+	 if "`quiet'"=="" noi dis as error  "'`varlist'' contains only missings. Will not be added to dictionary and dropped from dataset."
 	loc item_length=0
 }
 else if `r(N)'!=`c(N)' {
@@ -80,22 +82,31 @@ if regexm("`item_type'","^str")==1 {
 }
 *FOR NUMERIC. 
 else if regexm("`item_type'","^str")==0 {
+	
+	*BY DEFAULT WE SIMPLY TAKE IT FROM UNDERLYING DATA (GET MIN AND MAX AS CSPRO READS CHARACTERS)
+	 mata: st_local("max_value", strofreal(strlen(strofreal(max(st_data(.,"`varlist'")),"%16.0g"))))
+	 mata: st_local("min_value", strofreal(strlen(strofreal(min(st_data(.,"`varlist'")),"%16.0g"))))
+	 loc item_length=cond(`max_value'>=`min_value', `max_value',`min_value')
 
-	*IF VALUE LABEL EXIST, TAKE THOSE, AS POTENTIALLY UNDERLYING DATA DOES NOT CONTAIN THE MAX LENGTH. WOULD CAUSE ISSUES IN READING DICT. 
+	*TODO: CLEAN THIS UP AND REMOVE AS OUTDATED. SHOULDN'T BE USED AS UNDERLYING DATA IS USED FOR EXCEL!!
+	*IF VALUE LABEL EXIST: NEED TO  GET MAXIMUM FROM VALUE LABEL LIST. BECAUSE IF UNDERLYING DATA DOES NOT CONTAIN THE MAX VALUE (BUT LABEL EXISTS FOR IT) IT WOULD CAUSE ISSUES
+	*SO COMPARE IT 
+	/*
     mata:  st_local("value_label",st_varvaluelabel("`varlist'"))
 	if "`value_label'"!="" {
 			//GET THE VALUE LABELS 
 			mata: st_vlload(st_varvaluelabel("`varlist'"), values=., text=.)
-			//IDENTIFY LENGTH OF MAX IN VALUES OF VALUE LABEL
-			mata: st_local("item_length",strofreal(strlen(strofreal(max(values),"%16.0g"))))
+			//IDENTIFY LENGTH OF MIN/MAX IN VALUES OF VALUE LABEL. WHATEVER IS "LONGER" IN STRING TERMS WILL BE ITEM LENGT
+			mata: st_local("max_value",strofreal(strlen(strofreal(max(values),"%16.0g"))))
+			mata: st_local("min_value",strofreal(strlen(strofreal(min(values),"%16.0g"))))
+			loc label_max=cond(`max_value'>=`min_value', `max_value',`min_value')
+			*NOW UPDATE item_length IF IT IS LARGER THAN UNDERLYING DATA
+			loc item_length=cond(`label_max'>=`item_length', `label_max',`item_length')
 	}
-	*OTHERWISE, TAKE SIMPLY FROM DATA: 
-	*TODO: ADD A NOTE HERE TO USER?
-	else if "`value_label'"=="" mata: st_local("item_length", strofreal(strlen(strofreal(max(st_data(.,"`varlist'")),"%16.0g"))))
-
-	*IF DOUBLE DO SPECIAL
-	if "`item_type'"=="double" & "`value_label'"=="" {
-		noi dis as result "Attention. Variable `varlist' of type 'double'. Might lead to conversion and/or precision issues"
+*/
+	*IF DOUBLE/FLOAT DO SPECIAL
+	if inlist("`item_type'","double","float") & "`value_label'"=="" {
+		noi dis as result "Attention. Variable `varlist' of type '`item_type''. Might lead to conversion and/or precision issues"
 		*BRUTE FORCE TO STRING. COUNT THE ALPHA CHARACTERS BASED ON FORMULA: 
 		*ALL CHARS OF INTEGER PART + DELIMITER + FRACTIONAL PART UP TO 6!
 		*UNFORTUNATELY DO DIRTY (FOR NOW).
@@ -111,38 +122,42 @@ else if regexm("`item_type'","^str")==0 {
 		qui sum `helpvar3'
 		if `r(min)'==0 & `r(max)'==0 loc item_length=`item_length'+1
 	}
-	
+
 	*IF LARGER THAN 15, SET TO 15
 	if `item_length'>15 noi dis as result "Attention. Numeric variable `varlist' has length>15. Set to 15 to comply with CSPro"
 	if `item_length'>15 loc item_length=15
 
 		}
 	}
+
+
 *RETURN THE ITEM LENGTH
 return local item_length= `item_length'
 *AS WELL AS DATATYPE 
 return local csprodata_type=cond(regexm("`item_type'","^str")==1,"Alpha","Numeric")
 *AND THE UNDERLYING VARIABLE TYPE
 return local variable_type="`item_type'"
+
 end 
 
 
- **# GET THE FULL LENGTH OF ALL ITEMS SPECIFIED (USUALLY THE IDITEMS)
-capture program drop record_start
+ **# GET THE FULL LENGTH OF ALL ITEMS SPECIFIED (USUALLY THE IDITEMS). SIMPLE SUMS UP THE LENGTH
+capture program drop record_items_sumup
 
-program record_start, rclass
+program record_items_sumup, rclass
 
-syntax varlist
+syntax varlist,[quiet]
 
 *GET THE LENGTH OF VARIABLE: 
-loc record_start=1
+loc record_items_sumup=1
 foreach var of var `varlist' {
-	investigate_item `var'
-	loc record_start=`record_start'+`r(item_length)'
+	if "`quiet'"=="" investigate_item `var'
+	if "`quiet'"!="" investigate_item `var',quiet
+	loc record_items_sumup=`record_items_sumup'+`r(item_length)'
 }
 
 *RETURN THE ITEM LENGTH
-return local record_start= `record_start'
+return local record_items_sumup= `record_items_sumup'
 end 
 
 
@@ -182,9 +197,9 @@ capture program drop write_valueset
 
 program write_valueset
 
-syntax , variable(string) vslabel(string) vsname(string) 
+syntax , variable(string) vslabel(string) vsname(string) itemlength(numlist)
 
-	   	**FIRST WRITE THE HEADER
+	   	**## FIRST WRITE THE HEADER
 		#d ;
 		file write dictionary  
 		 _newline
@@ -193,9 +208,27 @@ syntax , variable(string) vslabel(string) vsname(string)
 		"Label=`vslabel'" _newline
 		"Name=`vsname'" ;
 		#d cr
-		
-		*NOW WRITE THE ACTUAL VALUES 
-		//GET THE VALUE LABELS 
+
+		**## NOW WRITE THE VALUE SET
+
+		**### FIRST GET THE ACTUAL VALUES IN UNDERLYING DATA 
+			levelsof `variable',loc(levels)
+			*GET TEMPORARY HELPFILE FOR MERGIN IT BELOW 
+			preserve
+			clear 
+			set obs `r(r)'
+			g code=""
+			loc helpcount=1
+			foreach lev of loc levels {
+				replace code="`lev'" in `helpcount'
+				loc ++helpcount
+			}
+			tempfile all_values
+			save `all_values'
+			restore
+
+
+		**### NOW GET THE VALUE LABELS 
 		mata: st_vlload(st_varvaluelabel("`variable'"), values=., text=.)
 		//STORE THE VALUE LABELS IN A MATRIX
 		mata:VL_MATRIX= strofreal(values,"%16.0g"),text
@@ -204,11 +237,27 @@ syntax , variable(string) vslabel(string) vsname(string)
 		 clear
 		 **GET IT INTO DATA FRAME
 		 getmata(code label)=VL_MATRIX
+		 **#### COMPARE VALUE LABELS AGAINST UNDERLYING DATA
+		 *CHECK IF THE VALUES ACTUALLY EXIST IN UNDERLIYING DATA:SIMPYL MERGE ALL UNIQUE VALUES IN
+		 merge  1:1 code using `all_values'
+		 *IF ONLY MASTER (merge==1): THIS VALUE EXISTED ONLY IN VALUE LABEL. 
+		 *WILL BE DROPPED IN CASE THE ITEM LENGTH IS SMALLER THAN THE LENGTH OF THAT VALUE 
+		 g length_str=length(code)
+		 **TODO: HIGHLIGHT TO USER WHICH VALUE LABEL NOT USED? 
+		 drop if _merge==1 & length_str>`itemlength'
+		 *IF ONLY USING: DIDN'T HAVE VALUE LABEL. (E.g. Less than one year for age Questions)
+		 *ADD VALUE LABEL = CODE
+		 replace label=code if _merge==2
+		 drop _merge length_str
+		 *END OF CHECK
+		 ****
 		 
 		 *CREATE VARIABLE THAT STORES THE CSPROP VALUE PATTERN
 		 g cspro_value="Value="+code+";"+label
 		 *GO THROUGH EACH ROW 
-		 *TODO: POSSIBLE TO DO IN ONELINER W/OUT LOOP?
+
+		 *TODO: POSSIBLE TO DO IN ONELINER W/OUT LOOP?´
+		 sort code
 		 forvalues row=1/`c(N)' {
 			file write dictionary _newline (cspro_value[`row'])
 		 }
@@ -277,7 +326,7 @@ file open dictionary using `wf' , write replace
 
  **# MAIN DICTIONARY 'OPTIONS'/SETTINGS	
  *FIRST IDENTIFY THE LENGHTH OF IDITEMS
-record_start `iditems'
+record_items_sumup `iditems'
 
 #d ;
 file write dictionary   
@@ -285,12 +334,12 @@ file write dictionary
 "Version=CSPro 7.7"  _newline
 "Label=`dictionary'"  _newline
 "Name=`dictionary_label'"  _newline
-"RecordTypeStart= `r(record_start)'"  _newline
+"RecordTypeStart= `r(record_items_sumup)'"  _newline
 "RecordTypeLen=`recordlength'"  _newline
 "Positions=Relative"  _newline
 "ZeroFill=Yes"  _newline
-"SecurityOptions=3F804FBE8B125F1D4F2888E49611F0CC40D87D7DF9AF3DC8E94E672801895741AF8C05AF419305EC3E456524EA2B37F7" _newline
-"DecimalChar=Yes" ;
+"DecimalChar=Yes" _newline
+"SecurityOptions=3F804FBE8B125F1D4F2888E49611F0CC40D87D7DF9AF3DC8E94E672801895741AF8C05AF419305EC3E456524EA2B37F7" ;
 #d cr
 
  **# MAIN LEVEL: 'QUESTIONNAIRE' LEVEL
@@ -337,7 +386,7 @@ foreach iditem of loc iditems {
 	*WRITE THE VALUE SET - ONLY IF THERE ARE VALUE LABELS 
 	*IDENTIFY VALUE LABEL ("" IF IT DOESNT EXIST)
     mata:  st_local("value_label",st_varvaluelabel("`iditem'"))
-	   if "`value_label'"!="" write_valueset, variable("`iditem'") vslabel("`item_lbl'") vsname("`item_vs_name'")
+	   if "`value_label'"!="" write_valueset, variable("`iditem'") vslabel("`item_lbl'") vsname("`item_vs_name'") itemlength(`r(item_length)')
 }
    
  **# CLOSE THE FILE
@@ -358,12 +407,15 @@ capture program drop dcf_addrecord
 program dcf_addrecord
 *TODO: FLAG IF LABELS (E:G: QUESTIONNAIRE OR VARIABLE) ARE MORE THAN 255. CURRENTLY SILENTLY SHORTENS
 
-syntax using/,   record(string) iditems(varlist) [required(string)] [maxrecord(numlist)] [nodrop]
+syntax using/,   record(string) iditems(varlist) [required(string)] [maxrecord(numlist)] 
+
+qui {
 
 **# PROCESS THE INPUT 
 
 **NAMES OF INPUT
 ****************
+
 
  *REQUIRED 
  if !inlist("`required'","Yes","No") &  length("`required'")>0 {
@@ -385,33 +437,47 @@ syntax using/,   record(string) iditems(varlist) [required(string)] [maxrecord(n
  }
 
  
-**# IDENTIFY LAST START & LENGTH OF ITEM & RECORDVALUE IN EXISTING DICTIONARY FILE
- *FIRST IDENTIFY THE LENGHTH OF IDITEMS
-record_start `iditems'
 
-**# MAIN SETTINGS/LOCALS
-** THE STARTING POSITION OF ITEMS: BASED ON LENGT OF IDITEMS (NO VALUE ADDED)
-loc item_pos=`r(record_start)'
+ **# OPEN THE FILE OF USER
+file open dictionary using  `"`using'"', write append 		
 
-*GENERATE A RANDOM VALUE FOR RecordTypeValue. SEEMS LIKE THIS SHOULD SATISFY CSPRO AS LONG AS INTEGER
+**# MAIN RECORD SETTINGS/LOCALS
+
+**## IDENTIFY LENGTH OF RECORD (RecordLen)
+**WHICH IS THE SUM OF ALL ITEMS TO BE ADDED + THE LENGTH OF IDITEMS (WHICH IN TURN IS THE START OF THE ITEMS IN RECORD. THATS WHY WE RUN IN NEXT LINES record_items_sumup SEPERATELY)!
+
+**### IDENTIFY START OF ITEMS WITHIN RECORD WHICH IS LENGTH OF IDITEMS,NO VALUE ADDED. 
+**BASED ON THIS INITIAL VALUE, THE FIRST ITEM WILL USE TIS VALUE, 
+*THE OTHERS ARE start+LENGHT OF PREVIOUS ITEMS. 
+record_items_sumup `iditems'
+loc item_pos=`r(record_items_sumup)'
+
+**NOW THE ITEMS TO BE ADDED (ALL BUT iditems)
+qui ds `iditems',not
+record_items_sumup `r(varlist)',quiet
+*Final length: items + iditems 
+loc recordlen=`r(record_items_sumup)' + `item_pos'
+
+
+**## GENERATE A RANDOM VALUE FOR RecordTypeValue. SEEMS LIKE THIS SHOULD SATISFY CSPRO AS LONG AS INTEGER
 loc rnd_rv=uniform()
 loc rnd_rv=substr("`rnd_rv'",2,.)
 
-**# OPEN THE FILE OF USER
-file open dictionary using  `"`using'"', write append 		
 
-**# APPEND RECORD SETTINGS 
+**## APPEND RECORD SETTINGS 
  #d ;
 file write dictionary _newline _newline 
 "[Record]" _newline
 "Label=`record'" _newline
 "Name=`record_name'" _newline
 "RecordTypeValue='`rnd_rv''" _newline
+"RecordLen='`recordlen''" _newline
 "Required=`required'";
 #d cr
 
 ** IF MAX VALUE SPECIFIED 
 if "`maxrecord'"!="" file write dictionary _newline "MaxRecords=`maxrecord'"
+
 
 
 
@@ -441,7 +507,8 @@ foreach itemvar of var `r(varlist)' {
 	loc item_vs_name=substr("`item_vs_name'",1,255)
 	
 	*GET LENGTH OF THAT VARIABLE AND DATATYPE
-	investigate_item `itemvar'
+	investigate_item `itemvar' 
+
 
 	*WRITE ITEM (ONLY IF NOT ALL MISSING)
     if `r(item_length)'!=0 {
@@ -458,10 +525,11 @@ foreach itemvar of var `r(varlist)' {
 	*WRITE THE VALUE SET - ONLY IF THERE ARE VALUE LABELS & ITEM LENGTH>0 (Latter avoids if .c etc. are labelled)
 	*IDENTIFY VALUE LABEL ("" IF IT DOESNT EXIST)
     mata:  st_local("value_label",st_varvaluelabel("`itemvar'"))
-	   if "`value_label'"!="" & `r(item_length)'>0 write_valueset, variable("`itemvar'") vslabel("`item_lbl'") vsname("`item_vs_name'")
+	   if "`value_label'"!="" & `r(item_length)'>0 write_valueset, variable("`itemvar'") vslabel("`item_lbl'") vsname("`item_vs_name'") itemlength(`r(item_length)')
 }
 
  **# CLOSE THE FILE
 file close dictionary 
+}
 
 end 
