@@ -1,13 +1,14 @@
-*! version 0.0.1 August 2022
+*! version 0.0.2 October 2022
 *! Author: Peter Brueckmann, p.brueckmann@mailbox.org
 
+*TODO: MAKE recordvalue FOR addrecord NOT NECESSARY. GET "read_dict" BACK IN
+*TODO: IF INDEED THE ORDER OF IDITEMS MATTERS (E.G DISTRICT FIRST THEN INTKEY) THEN ASSERT?
 *TODO: Recordtypelenght potentially only=1. Then it at least doesnt give an error. weirds
 *TODO: CHECK ISSUE FLAGGED XXXX__123. I THINK BETTER TO TAKE OUT THE VALUE LABEL CHECK IN THAT COMMAND? BUT THEN NAURU GIVES MISMATCHES AGAIN. INVESTIGATE WHERE THEY COME FRM
-*TODO: 2) IF ONLY ONE VALUE LABEL (e.g. Age "Less than one year"), ADD THE REMAINING VALUES
 *TODO: MAKE DROPPING OBS IF ALL MISSING OPTIONAL?
 *TODO: ADJUST COMMAND SO IT DOES RecordTypeLen ONESELF? See https://www.statalist.org/forums/forum/general-stata-discussion/general/1458650-overwrite-line-in-textfile-with-file-command
 *TODO: IF VALUESET MORE THAN 500 UNIQUE LABELS, RETURN ERROR OR DON'T DO
-*TODO: FLAG ALL INPUTS AND IMPROVE INPUTS (e.g. maxrecord only allow 1 digit)
+*TODO: FLAG ALL INPUTS AND IMPROVE INPUTS 
 *TODO: GO THROUGH ALL MISC. TODOS IN FILE
 *TODO: SECURITYOPTIONS REALLY NEEDED? OR DO RANDOM NUMBER?
 *TODO: COMMANDS AFTER SETUP: CHECK IF FILE EXISTS!
@@ -198,7 +199,7 @@ capture program drop write_valueset
 program write_valueset
 
 syntax , variable(string) vslabel(string) vsname(string) itemlength(numlist)
-
+qui {
 	   	**## FIRST WRITE THE HEADER
 		#d ;
 		file write dictionary  
@@ -212,17 +213,25 @@ syntax , variable(string) vslabel(string) vsname(string) itemlength(numlist)
 		**## NOW WRITE THE VALUE SET
 
 		**### FIRST GET THE ACTUAL VALUES IN UNDERLYING DATA 
-			levelsof `variable',loc(levels)
+			qui levelsof `variable',loc(levels)
+			*TEMP: COUNT DISTINCT VALUES. AS STATA <15 DOESNT RETURN r(r) AND DONT WANT TO USE distinct.ado USER PROGRAMM FOR NOW
+			loc distinct_count=0
+			foreach levl of loc levels {
+				loc distinct_count=`distinct_count'+1
+			}
+
+
 			*GET TEMPORARY HELPFILE FOR MERGIN IT BELOW 
 			preserve
 			clear 
-			set obs `r(r)'
+			set obs `distinct_count'
 			g code=""
 			loc helpcount=1
 			foreach lev of loc levels {
-				replace code="`lev'" in `helpcount'
+				qui replace code="`lev'" in `helpcount'
 				loc ++helpcount
 			}
+
 			tempfile all_values
 			save `all_values'
 			restore
@@ -239,7 +248,7 @@ syntax , variable(string) vslabel(string) vsname(string) itemlength(numlist)
 		 getmata(code label)=VL_MATRIX
 		 **#### COMPARE VALUE LABELS AGAINST UNDERLYING DATA
 		 *CHECK IF THE VALUES ACTUALLY EXIST IN UNDERLIYING DATA:SIMPYL MERGE ALL UNIQUE VALUES IN
-		 merge  1:1 code using `all_values'
+		 qui merge  1:1 code using `all_values'
 		 *IF ONLY MASTER (merge==1): THIS VALUE EXISTED ONLY IN VALUE LABEL. 
 		 *WILL BE DROPPED IN CASE THE ITEM LENGTH IS SMALLER THAN THE LENGTH OF THAT VALUE 
 		 g length_str=length(code)
@@ -254,15 +263,19 @@ syntax , variable(string) vslabel(string) vsname(string) itemlength(numlist)
 		 
 		 *CREATE VARIABLE THAT STORES THE CSPROP VALUE PATTERN
 		 g cspro_value="Value="+code+";"+label
-		 *GO THROUGH EACH ROW 
 
+		 *GET IT IN PROPER ORDER, THAT IS SORT BY INTEGER NOT BY CHARACTER
+		 destring code, replace
+		 sort code
+		
+		 *GO THROUGH EACH ROW AND WRITE
 		 *TODO: POSSIBLE TO DO IN ONELINER W/OUT LOOP?´
 		 sort code
 		 forvalues row=1/`c(N)' {
 			file write dictionary _newline (cspro_value[`row'])
 		 }
 		restore
-
+}
 end 
 
 
@@ -284,7 +297,7 @@ syntax ,  dictionary(string) ///
 		  iditems(varlist) ///
 		  recordlength(numlist) ///
 		  [FOLDER(string)]
-
+qui{
 **# PROCESS THE INPUT 
 if `recordlength'<=0 {
 	noi dis as error "recordlength(numlist) must not be negative. Please check."
@@ -306,15 +319,15 @@ if "`folder'"=="" loc folder "`c(pwd)'"
  loc questionnaire_name=upper(ustrregexra("`questionnaire'","\s|\t|\n","_"))
 *CORRECT LABEL
  loc questionnaire_label=substr("`questionnaire'",1,255)
-
 **NAMES OF INPUT
 ****************
 **TODO: CSPRO REQUIREMENT The first character of a name must be a letter; the last character cannot be an underscore
  **# DICTIONARY NAME 
  loc dictionary_label=upper(ustrregexra("`dictionary'","\s|\t|\n","_")) 
  
+
 **IDITEMS ARE TRULY IDs? 
- isid `iditems'
+isid `iditems'
 
 **# MAIN SETTINGS/LOCALS
 ** THE STARTING POSITION OF ITEMS
@@ -323,7 +336,6 @@ loc item_pos=1
 **# WRITE THE DICTIONARY FILE IN TEMPFILE
 tempfile wf
 file open dictionary using `wf' , write replace 		
-
  **# MAIN DICTIONARY 'OPTIONS'/SETTINGS	
  *FIRST IDENTIFY THE LENGHTH OF IDITEMS
 record_items_sumup `iditems'
@@ -362,7 +374,6 @@ foreach iditem of loc iditems {
 	*VARIABLE LABEL (SHORTEN TO 255 CHAR MAX)
 	loc item_lbl: variable label `iditem'
 	loc item_lbl=substr("`item_lbl'",1,255)
-
 	*VARIABLE NAME. IN UPPER CASE TO MIMIC CSPRO 
 	loc item_name=upper("`iditem'")
 	
@@ -379,7 +390,7 @@ foreach iditem of loc iditems {
 	}
 	*WRITE ITEM
     write_item,itemlabel("`item_lbl'") itemname("`item_name'") start(`item_pos')
-	
+
 	*AFTER EACH VARIABLE, IDENTIFY THE NEW START POSITION
 	loc item_pos=`item_pos'+`r(item_length)'
 
@@ -387,12 +398,17 @@ foreach iditem of loc iditems {
 	*IDENTIFY VALUE LABEL ("" IF IT DOESNT EXIST)
     mata:  st_local("value_label",st_varvaluelabel("`iditem'"))
 	   if "`value_label'"!="" write_valueset, variable("`iditem'") vslabel("`item_lbl'") vsname("`item_vs_name'") itemlength(`r(item_length)')
+	   		
+
 }
+
    
  **# CLOSE THE FILE
 file close dictionary 
 **COPY TEMPFILE TO FINAL FILE 
 copy `wf' "`folder'/`dictionary_label'.dcf",replace
+
+}
 end 
 
 
@@ -407,7 +423,7 @@ capture program drop dcf_addrecord
 program dcf_addrecord
 *TODO: FLAG IF LABELS (E:G: QUESTIONNAIRE OR VARIABLE) ARE MORE THAN 255. CURRENTLY SILENTLY SHORTENS
 
-syntax using/,   record(string) iditems(varlist) [required(string)] [maxrecord(numlist)] 
+syntax using/,   record(string) iditems(varlist) recordvalue(integer) [required(string)]
 
 qui {
 
@@ -442,6 +458,13 @@ qui {
 file open dictionary using  `"`using'"', write append 		
 
 **# MAIN RECORD SETTINGS/LOCALS
+**## IDENTIFY MAX RECORDS (NUMBER OF MAX OBSERVATIONS PER iditems TO BE EXPECTED)
+tempvar max 
+bys `iditems': g `max'=_N
+qui sum `max'
+loc max_record=`r(max)'
+drop `max'
+
 
 **## IDENTIFY LENGTH OF RECORD (RecordLen)
 **WHICH IS THE SUM OF ALL ITEMS TO BE ADDED + THE LENGTH OF IDITEMS (WHICH IN TURN IS THE START OF THE ITEMS IN RECORD. THATS WHY WE RUN IN NEXT LINES record_items_sumup SEPERATELY)!
@@ -459,10 +482,6 @@ record_items_sumup `r(varlist)',quiet
 loc recordlen=`r(record_items_sumup)' + `item_pos'
 
 
-**## GENERATE A RANDOM VALUE FOR RecordTypeValue. SEEMS LIKE THIS SHOULD SATISFY CSPRO AS LONG AS INTEGER
-loc rnd_rv=uniform()
-loc rnd_rv=substr("`rnd_rv'",2,.)
-
 
 **## APPEND RECORD SETTINGS 
  #d ;
@@ -470,15 +489,11 @@ file write dictionary _newline _newline
 "[Record]" _newline
 "Label=`record'" _newline
 "Name=`record_name'" _newline
-"RecordTypeValue='`rnd_rv''" _newline
+"RecordTypeValue='`recordvalue''" _newline
 "RecordLen='`recordlen''" _newline
+"MaxRecords=`max_record'"  _newline
 "Required=`required'";
 #d cr
-
-** IF MAX VALUE SPECIFIED 
-if "`maxrecord'"!="" file write dictionary _newline "MaxRecords=`maxrecord'"
-
-
 
 
 
