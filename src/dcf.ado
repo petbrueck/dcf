@@ -1,6 +1,7 @@
 *! version 0.0.2 October 2022
 *! Author: Peter Brueckmann, p.brueckmann@mailbox.org
 
+*TODO: recordlength ALWAYS 1? OR DONT SPECIFY AT ALL? MAYBE CAN BE DROPPED
 *TODO: MAKE recordvalue FOR addrecord NOT NECESSARY. GET "read_dict" BACK IN
 *TODO: IF INDEED THE ORDER OF IDITEMS MATTERS (E.G DISTRICT FIRST THEN INTKEY) THEN ASSERT?
 *TODO: Recordtypelenght potentially only=1. Then it at least doesnt give an error. weirds
@@ -330,15 +331,16 @@ if "`folder'"=="" loc folder "`c(pwd)'"
 isid `iditems'
 
 **# MAIN SETTINGS/LOCALS
-** THE STARTING POSITION OF ITEMS
-loc item_pos=1
+** THE STARTING POSITION OF ITEMS. STARTS AT 2 AS RECORDTYPESTART is 1
+loc item_pos=2
  
 **# WRITE THE DICTIONARY FILE IN TEMPFILE
 tempfile wf
 file open dictionary using `wf' , write replace 		
  **# MAIN DICTIONARY 'OPTIONS'/SETTINGS	
+
  *FIRST IDENTIFY THE LENGHTH OF IDITEMS
-record_items_sumup `iditems'
+*record_items_sumup `iditems'  
 
 #d ;
 file write dictionary   
@@ -346,7 +348,7 @@ file write dictionary
 "Version=CSPro 7.7"  _newline
 "Label=`dictionary'"  _newline
 "Name=`dictionary_label'"  _newline
-"RecordTypeStart= `r(record_items_sumup)'"  _newline
+"RecordTypeStart=1"  _newline
 "RecordTypeLen=`recordlength'"  _newline
 "Positions=Relative"  _newline
 "ZeroFill=Yes"  _newline
@@ -469,11 +471,11 @@ drop `max'
 **## IDENTIFY LENGTH OF RECORD (RecordLen)
 **WHICH IS THE SUM OF ALL ITEMS TO BE ADDED + THE LENGTH OF IDITEMS (WHICH IN TURN IS THE START OF THE ITEMS IN RECORD. THATS WHY WE RUN IN NEXT LINES record_items_sumup SEPERATELY)!
 
-**### IDENTIFY START OF ITEMS WITHIN RECORD WHICH IS LENGTH OF IDITEMS,NO VALUE ADDED. 
+**### IDENTIFY START OF ITEMS WITHIN RECORD WHICH IS LENGTH OF IDITEM  + 1 (AS Record Type Value=1) NO VALUE ADDED. 
 **BASED ON THIS INITIAL VALUE, THE FIRST ITEM WILL USE TIS VALUE, 
 *THE OTHERS ARE start+LENGHT OF PREVIOUS ITEMS. 
 record_items_sumup `iditems'
-loc item_pos=`r(record_items_sumup)'
+loc item_pos=`r(record_items_sumup)' +1
 
 **NOW THE ITEMS TO BE ADDED (ALL BUT iditems)
 qui ds `iditems',not
