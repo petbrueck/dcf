@@ -12,7 +12,7 @@ in your Stata command window. Once installed, type `help dcf` to retrieve more i
 
 
 ## **Overview**
-TBD
+TBD soon.
 
 
 ## **Example**
