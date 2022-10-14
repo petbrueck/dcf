@@ -23,16 +23,16 @@ Show that if large dataset you can simply keep 1 obs.
 use "main_intlevel_dataset.dta",clear
 
 **SET UP DICTIONARY
-dcf setup, dictionary("Example Dictionary") questionnaire("Survey Form X") iditems(idvar1 idvar2 idvar3) 
+dcf setup, dictionary("Example Dictionary") questionnaire("Survey Form X") iditems(idvar1 idvar2 idvar3)  recordlength(1)
 
 **ADD A MAIN INTERVIEW LEVEL RECORD
-dcf addrecord using  "EXAMPLE_DICTIONARY.dcf", record("Interview Level") iditems(idvar1 idvar2 idvar3)
+dcf addrecord using  "EXAMPLE_DICTIONARY.dcf", record("Interview Level") iditems(idvar1 idvar2 idvar3) recordvalue(1)
 
 *OPEN DATASET OF ROSTER, E.G. PERSON ROSTER
 *ASSUMPTION: iditems VARIABLES ARE IN THERE AND IN CORRECT ORDER
 use "person_roster.dta",clear
 
-dcf addrecord using  "EXAMPLE_DICTIONARY.dcf", record("Person Roster") iditems(idvar1 idvar2 idvar3) required("No")
+dcf addrecord using  "EXAMPLE_DICTIONARY.dcf", record("Person Roster") iditems(idvar1 idvar2 idvar3) recordvalue(2) required("No")
 ```
 
 
