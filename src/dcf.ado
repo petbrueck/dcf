@@ -187,7 +187,7 @@ syntax , itemlabel(string) itemname(string) start(integer)
 if "`r(csprodata_type)'"=="Alpha" file write dictionary _newline "DataType=Alpha"
 **IF DOUBLE ADD DECIMAL + DECIMAL=6. SEEMS TO BE DEFAULT BY CONVERSION
 if "`r(variable_type)'"=="double" file write dictionary _newline "DecimalChar=Yes"
-if "`r(variable_type)'"=="double" file write dictionary _newline "Decimal=6"
+*if "`r(variable_type)'"=="double" file write dictionary _newline "Decimal=6"
 
 
 end 
