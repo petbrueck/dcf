@@ -16,7 +16,6 @@ TBD
 
 
 ## **Example**
-Show that if large dataset you can simply keep 1 obs.
 
 ```
 *OPEN DATASET OF YOUR MAIN SURVEY DATA (INTERVIEW_LEVEL)
